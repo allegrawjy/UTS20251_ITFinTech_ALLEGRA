@@ -11,11 +11,11 @@ export default async function handler(req, res) {
   }
 
   if (req.method === "POST") {
-    // seed sederhana
+    // Seed dengan 9 menu + gambar
     const sample = [
-      { name: "Ayam Pop", price: 25000, image: "/ayam-pop.jpg" },
-      { name: "Rendang", price: 30000, image: "/rendang.jpg" },
-      { name: "Gulai Tunjang", price: 28000, image: "/tunjang.jpg" },
+      { name: "Ayam Pop", price: 25000, image: "/menu/ayam-pop.jpg" },
+      { name: "Rendang", price: 30000, image: "/menu/rendang.jpg" },
+      { name: "Gulai Tunjang", price: 28000, image: "/menu/gulai-tunjang.jpg" },
     ];
     await Product.deleteMany({});
     const data = await Product.insertMany(sample);
