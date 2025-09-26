@@ -1,126 +1,102 @@
 import { useEffect, useState } from "react";
-import { useRouter } from "next/router";
+import Link from "next/link";
 
 export default function Home() {
   const [products, setProducts] = useState([]);
   const [cart, setCart] = useState([]);
-  const router = useRouter();
 
+  // Load products & cart
   useEffect(() => {
     fetch("/api/products")
-      .then((res) => res.json())
-      .then((result) => {
-        if (result.success) {
-          setProducts(result.data);
+      .then(r => r.json())
+      .then(j => {
+        if (j.success) setProducts(j.data);
+        if (j.data?.length === 0) {
+          // auto seed kalau kosong
+          fetch("/api/products", { method: "POST" })
+            .then(() => fetch("/api/products").then(r => r.json()).then(j => setProducts(j.data)));
         }
       });
+
+    const saved = JSON.parse(localStorage.getItem("cart") || "[]");
+    setCart(saved);
   }, []);
 
-  // tambah ke cart
-  const addToCart = (product) => {
-    const exist = cart.find((item) => item._id === product._id);
-    if (exist) {
-      setCart(
-        cart.map((item) =>
-          item._id === product._id
-            ? { ...item, qty: item.qty + 1 }
-            : item
-        )
-      );
-    } else {
-      setCart([...cart, { ...product, qty: 1 }]);
+  const saveCart = (next) => {
+    setCart(next);
+    localStorage.setItem("cart", JSON.stringify(next));
+  };
+
+  const add = (p) => {
+    const next = [...cart];
+    const i = next.findIndex(it => it._id === p._id);
+    if (i === -1) next.push({ _id: p._id, name: p.name, price: p.price, qty: 1 });
+    else next[i].qty += 1;
+    saveCart(next);
+  };
+
+  const dec = (p) => {
+    const next = [...cart];
+    const i = next.findIndex(it => it._id === p._id);
+    if (i > -1) {
+      next[i].qty -= 1;
+      if (next[i].qty <= 0) next.splice(i, 1);
+      saveCart(next);
     }
   };
 
-  // lanjut ke checkout
-  const goToCheckout = () => {
-    router.push({
-      pathname: "/checkout",
-      query: { cart: JSON.stringify(cart) },
-    });
-  };
+  const qty = (id) => cart.find(it => it._id === id)?.qty || 0;
+  const total = cart.reduce((s, it) => s + it.price * it.qty, 0);
 
   return (
-    <div style={{ textAlign: "center", padding: "40px" }}>
-      <h1 style={{ fontSize: "2rem", marginBottom: "20px" }}>🍴 Menu Makanan</h1>
-      
-      {/* Daftar produk */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fill, minmax(250px, 1fr))",
-          gap: "20px",
-        }}
-      >
-        {products.map((p) => (
-          <div
-            key={p._id}
-            style={{
-              border: "1px solid #ddd",
-              borderRadius: "10px",
-              padding: "20px",
-              boxShadow: "0 2px 5px rgba(0,0,0,0.1)",
-              transition: "0.3s",
-            }}
-          >
-            <h2>{p.name}</h2>
-            <p>{p.description}</p>
-            <strong style={{ fontSize: "1.2rem" }}>Rp {p.price}</strong>
-            <br />
-            <button
-              style={{
-                marginTop: "10px",
-                padding: "8px 15px",
-                background: "green",
-                color: "white",
-                border: "none",
-                borderRadius: "5px",
-                cursor: "pointer",
-              }}
-              onClick={() => addToCart(p)}
-            >
-              Tambah
-            </button>
+    <div style={{ padding: 24, maxWidth: 900, margin: "0 auto" }}>
+      <h1 style={{ textAlign: "center" }}>🍽️ ALL'S GOOD FOOD</h1>
+      <p style={{ textAlign: "center" }}>Silakan pilih menu favoritmu</p>
+
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+        gap: 20,
+        marginTop: 24
+      }}>
+        {products.map(p => (
+          <div key={p._id} style={{
+            border: "1px solid #ddd",
+            borderRadius: 12,
+            padding: 16,
+            textAlign: "center",
+            background: "#fff",
+            boxShadow: "0 2px 6px rgba(0,0,0,0.05)"
+          }}>
+            <img src={p.image || "/placeholder.png"} alt={p.name}
+              style={{ width: "100%", height: 150, objectFit: "cover", borderRadius: 8, marginBottom: 8 }} />
+            <div style={{ fontWeight: 700, fontSize: 18 }}>{p.name}</div>
+            <div style={{ color: "#666", marginBottom: 8 }}>Rp{p.price.toLocaleString()}</div>
+            <div>
+              <button onClick={() => dec(p)} style={{ padding: "4px 10px" }}>-</button>
+              <span style={{ margin: "0 12px", fontWeight: 600 }}>{qty(p._id)}</span>
+              <button onClick={() => add(p)} style={{ padding: "4px 10px" }}>+</button>
+            </div>
           </div>
         ))}
       </div>
 
-      {/* Keranjang */}
-      {cart.length > 0 && (
-        <div
-          style={{
-            marginTop: "40px",
-            padding: "20px",
-            border: "2px solid #000",
-            borderRadius: "10px",
-            display: "inline-block",
-            textAlign: "left",
-          }}
-        >
-          <h2>🛒 Keranjang</h2>
-          <ul>
-            {cart.map((item) => (
-              <li key={item._id}>
-                {item.name} x {item.qty} = Rp {item.price * item.qty}
-              </li>
-            ))}
-          </ul>
-          <button
-            style={{
-              marginTop: "10px",
-              padding: "10px 20px",
-              background: "blue",
-              color: "white",
-              border: "none",
-              borderRadius: "5px",
-              cursor: "pointer",
-            }}
-            onClick={goToCheckout}
-          >
-            Lanjut ke Checkout →
-          </button>
+      {/* Cart summary */}
+      <div style={{
+        position: "fixed", bottom: 0, left: 0, right: 0,
+        background: "#fff", borderTop: "1px solid #eee",
+        padding: "12px 24px", display: "flex", justifyContent: "space-between", alignItems: "center"
+      }}>
+        <div>
+          <b>{cart.length} item</b> | Total: Rp{total.toLocaleString()}
         </div>
-      )}
+        <Link href="/checkout">
+          <button disabled={!cart.length} style={{
+            background: "orange", color: "#fff", padding: "10px 20px",
+            border: "none", borderRadius: 6, cursor: "pointer"
+          }}>Go to Checkout →</button>
+        </Link>
+      </div>
     </div>
   );
 }

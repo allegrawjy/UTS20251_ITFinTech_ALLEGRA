@@ -1,26 +1,54 @@
-import dbConnect from "../../lib/mongodb";
-import Checkout from "../../models/checkout";
+// /pages/api/webhook.js
+import dbConnect from "@/lib/mongodb";
+import Checkout from "@/models/checkout";
+import Payment from "@/models/payment";
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ message: "Method Not Allowed" });
+  if (req.method !== "POST") return res.status(405).end();
+
+  // Ambil token dari header Xendit
+  const token = req.headers["x-callback-token"];
+
+  // Bandingkan dengan env (mau CALLBACK atau WEBHOOK, keduanya dicek)
+  const expectedToken =
+    process.env.XENDIT_CALLBACK_TOKEN || process.env.XENDIT_WEBHOOK_TOKEN;
+
+  if (token !== expectedToken) {
+    return res
+      .status(401)
+      .json({ success: false, message: "Invalid callback token" });
   }
 
-  try {
-    await dbConnect();
+  await dbConnect();
 
-    // Data webhook dari Xendit
-    const event = req.body;
+  // Payload invoice dari Xendit
+  const payload = req.body || {};
+  const { id: invoiceId, external_id: externalId, status } = payload;
 
-    // contoh payload webhook: event.data.id, event.data.status
-    if (event.data && event.data.status === "PAID") {
-      const checkoutId = event.data.reference_id; // reference_id dikirim saat create invoice
-      await Checkout.findByIdAndUpdate(checkoutId, { status: "LUNAS" });
-    }
-
-    return res.status(200).json({ success: true });
-  } catch (error) {
-    console.error("❌ Webhook error:", error);
-    return res.status(500).json({ success: false, error: error.message });
+  if (!invoiceId || !externalId) {
+    return res
+      .status(400)
+      .json({ success: false, message: "Bad payload (no invoiceId / externalId)" });
   }
+
+  // Update Payment
+  await Payment.updateOne(
+    { externalId },
+    { invoiceId, status: status || "PENDING", raw: payload },
+    { upsert: true }
+  );
+
+  // Update Checkout status (PAID → LUNAS)
+  const checkoutStatus =
+    status === "PAID"
+      ? "PAID"
+      : status === "EXPIRED"
+      ? "EXPIRED"
+      : status === "CANCELLED"
+      ? "CANCELLED"
+      : "PENDING";
+
+  await Checkout.updateOne({ externalId }, { status: checkoutStatus });
+
+  return res.json({ success: true });
 }

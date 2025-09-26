@@ -1,18 +1,26 @@
-import dbConnect from "../../lib/mongodb";
-import Product from "../../models/Product";
+// /pages/api/products.js
+import dbConnect from "@/lib/mongodb";
+import Product from "@/models/Product";
 
 export default async function handler(req, res) {
   await dbConnect();
 
   if (req.method === "GET") {
-    const products = await Product.find();
-    return res.status(200).json({ success: true, data: products });
+    const data = await Product.find().lean();
+    return res.json({ success: true, data });
   }
 
   if (req.method === "POST") {
-    const product = await Product.create(req.body);
-    return res.status(201).json({ success: true, data: product });
+    // seed sederhana
+    const sample = [
+      { name: "Ayam Pop", price: 25000, image: "/ayam-pop.jpg" },
+      { name: "Rendang", price: 30000, image: "/rendang.jpg" },
+      { name: "Gulai Tunjang", price: 28000, image: "/tunjang.jpg" },
+    ];
+    await Product.deleteMany({});
+    const data = await Product.insertMany(sample);
+    return res.json({ success: true, data });
   }
 
-  res.status(405).json({ error: "Method not allowed" });
+  return res.status(405).end();
 }
