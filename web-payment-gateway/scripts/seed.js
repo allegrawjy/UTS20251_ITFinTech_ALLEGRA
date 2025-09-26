@@ -34,7 +34,7 @@ async function seed() {
       {
         name: "Es Teh Manis",
         price: 5000,
-        description: "Segelas es teh manis dingin",
+        description: "Es Teh Manis Solo",
         image:
           "https://images.unsplash.com/photo-1587740896339-713fae348b3a?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60",
       },
