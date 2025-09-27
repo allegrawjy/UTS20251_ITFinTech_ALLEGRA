@@ -1,6 +1,7 @@
 // /pages/payment/[id].js
 import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
+import Link from "next/link";  // 👈 tambahin ini
 
 export default function PaymentStatus() {
   const { query } = useRouter();
@@ -31,7 +32,9 @@ export default function PaymentStatus() {
       <p>Order: <b>{id}</b></p>
       <p>Total: <b>Rp{Number(info.total||0).toLocaleString()}</b></p>
       <p>Status: <b>{human}</b> ({info.status})</p>
-      <a href="/">Kembali ke menu</a>
+
+      {/* gunakan Link dari next/link */}
+      <Link href="/">Kembali ke menu</Link>
     </div>
   );
 }

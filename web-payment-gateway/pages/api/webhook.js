@@ -6,39 +6,37 @@ import Payment from "@/models/payment";
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
-  // Ambil token dari header Xendit
   const token = req.headers["x-callback-token"];
-
-  // Bandingkan dengan env (mau CALLBACK atau WEBHOOK, keduanya dicek)
   const expectedToken =
     process.env.XENDIT_CALLBACK_TOKEN || process.env.XENDIT_WEBHOOK_TOKEN;
 
   if (token !== expectedToken) {
-    return res
-      .status(401)
-      .json({ success: false, message: "Invalid callback token" });
+    console.log("❌ Invalid token:", token);
+    return res.status(401).json({ success: false, message: "Invalid callback token" });
   }
 
   await dbConnect();
 
-  // Payload invoice dari Xendit
   const payload = req.body || {};
+  console.log("📩 Webhook payload diterima:", JSON.stringify(payload, null, 2));
+
   const { id: invoiceId, external_id: externalId, status } = payload;
 
   if (!invoiceId || !externalId) {
+    console.log("❌ Payload tidak lengkap:", payload);
     return res
       .status(400)
       .json({ success: false, message: "Bad payload (no invoiceId / externalId)" });
   }
 
-  // Update Payment
+  // Simpan ke collection Payment
   await Payment.updateOne(
-    { externalId },
-    { invoiceId, status: status || "PENDING", raw: payload },
+    { invoiceId },
+    { invoiceId, externalId, status, raw: payload },
     { upsert: true }
   );
 
-  // Update Checkout status (PAID → LUNAS)
+  // Tentukan status
   const checkoutStatus =
     status === "PAID"
       ? "PAID"
@@ -48,7 +46,19 @@ export default async function handler(req, res) {
       ? "CANCELLED"
       : "PENDING";
 
-  await Checkout.updateOne({ externalId }, { status: checkoutStatus });
+  // Update checkout berdasarkan externalId atau invoiceId
+  const result = await Checkout.updateOne(
+    { $or: [{ externalId }, { invoiceId }] },
+    {
+      status: checkoutStatus,
+      invoiceId,
+      paidAmount: payload.paid_amount || 0,
+      paymentMethod: payload.payment_method || null,
+      paidAt: payload.paid_at || null,
+    }
+  );
+
+  console.log("✅ Update Checkout result:", result);
 
   return res.json({ success: true });
 }
