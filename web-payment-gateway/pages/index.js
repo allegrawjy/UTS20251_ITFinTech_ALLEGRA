@@ -6,23 +6,30 @@ export default function Home() {
   const [cart, setCart] = useState([]);
 
   useEffect(() => {
-    fetch("/api/products")
-      .then((r) => r.json())
-      .then((j) => {
-        if (j.success) setProducts(j.data);
-        if (j.data?.length === 0) {
-          fetch("/api/products", { method: "POST" })
-            .then(() =>
-              fetch("/api/products")
-                .then((r) => r.json())
-                .then((j) => setProducts(j.data))
-            );
-        }
-      });
+  const loadProducts = async () => {
+    try {
+      const res = await fetch("/api/products");
+      const j = await res.json();
 
-    const saved = JSON.parse(localStorage.getItem("cart") || "[]");
-    setCart(saved);
-  }, []);
+      if (j.success && j.data.length > 0) {
+        setProducts(j.data);
+      } else {
+        // FIX: pakai /api/products, bukan /api/seed
+        await fetch("/api/products", { method: "POST" });
+        const seeded = await fetch("/api/products").then((r) => r.json());
+        if (seeded.success) setProducts(seeded.data);
+      }
+    } catch (err) {
+      console.error("Fetch products error:", err);
+    }
+  };
+
+  loadProducts();
+
+  const saved = JSON.parse(localStorage.getItem("cart") || "[]");
+  setCart(saved);
+}, []);
+
 
   const saveCart = (next) => {
     setCart(next);
