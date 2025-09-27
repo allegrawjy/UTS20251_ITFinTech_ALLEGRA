@@ -17,26 +17,6 @@ export default async function handler(req, res) {
   if (req.method === "POST") {
     try {
       await Product.deleteMany({});
-      const sample = [
-        { 
-          name: "Nasi Goreng", 
-          price: 25000, 
-          image: "https://images.unsplash.com/photo-1617196033954-3a9d27d44c6a", 
-          description: "Nasi goreng spesial ala resto" 
-        },
-        { 
-          name: "Mie Ayam", 
-          price: 20000, 
-          image: "https://images.unsplash.com/photo-1617191517304-2b7d8f8a8a0f", 
-          description: "Mie ayam dengan topping ayam manis" 
-        },
-        { 
-          name: "Es Teh Manis", 
-          price: 5000, 
-          image: "https://images.unsplash.com/photo-1527169402691-feff5539e52c", 
-          description: "Segelas es teh manis dingin" 
-        },
-      ];
       const data = await Product.insertMany(sample);
       return res.json({ success: true, data });
     } catch (err) {
