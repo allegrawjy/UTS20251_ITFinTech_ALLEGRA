@@ -157,7 +157,7 @@ export default function Home() {
       <header className="w-full py-4 px-6 flex justify-between items-center bg-gray-950 shadow-lg border-b border-gray-800">
         <div className="flex items-center gap-2">
           <span className="font-bold text-2xl text-white">
-            🍜 Allegra Foodies
+            🍜 ALL's GOOD FOOD
           </span>
         </div>
         
@@ -255,7 +255,7 @@ export default function Home() {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto py-8 px-4">
         <h1 className="text-3xl font-bold mb-8 text-white">
-          Menu Spesial Kami
+          Menu 
         </h1>
         
         {products.length === 0 ? (

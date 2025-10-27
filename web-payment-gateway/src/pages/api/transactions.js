@@ -35,6 +35,7 @@ export default async function handler(req, res) {
 
   // Hitung total harga
   const totalPrice = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const FONNTE_API_TOKEN = process.env.FONNTE_API_TOKEN;
 
   // Simpan transaksi ke database
   const transaction = await Transaction.create({
@@ -76,10 +77,31 @@ export default async function handler(req, res) {
 
     // Simpan invoice url ke transaksi
     transaction.invoiceUrl = invoice.invoice_url;
+    transaction.status = 'PAID';
     await transaction.save();
 
+    const whatsapp = user.whatsappNumber;
+    const message = `Pesanan Anda di Allegra Foodies berhasil! ID Transaksi: ${transaction._id}. Terima kasih telah berbelanja.`;
+    await fetch('https://api.fonnte.com/send', {
+      method: 'POST',
+      headers: {
+        'Authorization': FONNTE_API_TOKEN,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ target: whatsapp, message }),
+    });
     return res.status(200).json({ invoiceUrl: invoice.invoice_url });
   } catch (err) {
+      const whatsapp = user.whatsappNumber;
+      const message = `Pembayaran Allegra Foodies Anda gagal diproses. Silakan coba lagi.`;
+      await fetch('https://api.fonnte.com/send', {
+        method: 'POST',
+        headers: {
+          'Authorization': FONNTE_API_TOKEN,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ target: whatsapp, message }),
+      });
     return res.status(500).json({ message: 'Gagal integrasi Xendit', error: err.message });
   }
 }
