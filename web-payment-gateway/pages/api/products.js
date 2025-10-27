@@ -1,4 +1,3 @@
-// pages/api/products.js
 import connectDB from '../../lib/mongodb';
 import Product from '../../models/Product';
 
@@ -15,7 +14,6 @@ export default async function handler(req, res) {
   } 
   
   else if (req.method === 'POST') {
-    // Create default products jika belum ada
     try {
       const count = await Product.countDocuments();
       
