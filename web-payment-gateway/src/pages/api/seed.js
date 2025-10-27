@@ -1,6 +1,6 @@
 import connectDB from '../../../lib/db';
 import User from '../../../models/user';
-import Product from '../../models/Product';
+import Product from '../../../models/Product';
 import bcrypt from 'bcryptjs';
 
 export default async function handler(req, res) {
