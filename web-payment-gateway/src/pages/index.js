@@ -21,10 +21,14 @@ export default function Home() {
     async function fetchProducts() {
       try {
         const res = await fetch("/api/products");
+        if (!res.ok) {
+          throw new Error(`HTTP error! status: ${res.status}`);
+        }
         const data = await res.json();
         setProducts(data);
       } catch (error) {
         console.error("Error fetching products:", error);
+        setProducts([]);
       }
     }
     fetchProducts();
