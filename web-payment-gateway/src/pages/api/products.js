@@ -48,7 +48,8 @@ export default async function handler(req, res) {
     console.error("❌ API /products error:", error.message);
     res.status(500).json({
       message: "Internal Server Error",
-      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+      error:
+        process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
 }

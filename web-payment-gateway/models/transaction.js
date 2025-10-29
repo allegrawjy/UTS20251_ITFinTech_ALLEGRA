@@ -1,3 +1,4 @@
+// File: models/transaction.js
 import mongoose from 'mongoose';
 
 const transactionSchema = new mongoose.Schema(
@@ -15,10 +16,12 @@ const transactionSchema = new mongoose.Schema(
     totalPrice: { type: Number, required: true, default: 0 },
     status: {
       type: String,
-      enum: ['PAID', 'PENDING', 'FAILED'],
+      enum: ['PAID', 'SETTLED', 'PENDING', 'FAILED', 'EXPIRED'],
       required: true,
       default: 'PENDING',
     },
+    invoiceUrl: { type: String },
+    xenditInvoiceId: { type: String },
     paidAt: { type: Date },
   },
   {

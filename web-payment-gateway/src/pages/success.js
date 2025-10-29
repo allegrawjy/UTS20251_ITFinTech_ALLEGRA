@@ -1,4 +1,34 @@
+import { useEffect } from 'react';
+import { useRouter } from 'next/router';
+
 export default function SuccessPage() {
+  const router = useRouter();
+  const { transactionId } = router.query;
+
+  useEffect(() => {
+    if (transactionId) {
+      // Kirim WhatsApp saat page load
+      fetch('/api/send-success-wa', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ transactionId }),
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          console.log('WhatsApp sent successfully');
+        } else {
+          console.error('Failed to send WhatsApp:', data.message);
+        }
+      })
+      .catch(error => {
+        console.error('Error sending WhatsApp:', error);
+      });
+    }
+  }, [transactionId]);
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-100 to-blue-100 dark:from-green-900 dark:to-zinc-900">
       <div className="bg-white dark:bg-zinc-950 p-8 rounded-lg shadow-lg w-full max-w-md text-center">
