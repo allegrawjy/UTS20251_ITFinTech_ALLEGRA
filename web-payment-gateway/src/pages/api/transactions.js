@@ -46,6 +46,9 @@ export default async function handler(req, res) {
   const totalPrice = subtotal + tax;
 
   try {
+    // ✅ GENERATE external_id dulu sebelum create transaction
+    const externalId = `TRX-${Date.now()}-${user._id}`;
+
     // 1. Simpan transaksi ke database dengan status PENDING
     const transaction = await Transaction.create({
       user: user._id,
@@ -58,10 +61,12 @@ export default async function handler(req, res) {
       })),
       totalPrice,
       status: 'PENDING',
+      external_id: externalId, // ✅ TAMBAHKAN INI
     });
 
     console.log('✅ Transaction created:', {
       id: transaction._id,
+      external_id: transaction.external_id,
       status: transaction.status,
       totalPrice: totalPrice
     });
@@ -78,7 +83,7 @@ export default async function handler(req, res) {
         'Authorization': 'Basic ' + Buffer.from(XENDIT_SECRET_KEY + ':').toString('base64'),
       },
       body: JSON.stringify({
-        external_id: transaction._id.toString(),
+        external_id: externalId, // ✅ PAKAI external_id yang sama
         payer_email: user.email || 'noreply@allegra.com',
         description: 'Pembayaran ALL\'S GOOD FOOD',
         amount: totalPrice,
@@ -97,7 +102,10 @@ export default async function handler(req, res) {
       throw new Error(invoice.message || 'Gagal membuat invoice Xendit');
     }
 
-    console.log('✅ Xendit invoice created:', invoice.id);
+    console.log('✅ Xendit invoice created:', {
+      id: invoice.id,
+      external_id: invoice.external_id
+    });
 
     // 3. Update transaksi dengan invoice URL
     transaction.invoiceUrl = invoice.invoice_url;
@@ -168,7 +176,7 @@ ${orderDetails}
 Silakan selesaikan pembayaran melalui link berikut:
 ${invoice.invoice_url}
 
-ID Pesanan: #${transaction._id}
+ID Pesanan: #${transaction.external_id}
 
 Terima kasih! ☕`;
 

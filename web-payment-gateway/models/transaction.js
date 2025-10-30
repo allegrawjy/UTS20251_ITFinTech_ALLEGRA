@@ -1,4 +1,3 @@
-// File: models/transaction.js
 import mongoose from 'mongoose';
 
 const transactionSchema = new mongoose.Schema(
@@ -22,6 +21,7 @@ const transactionSchema = new mongoose.Schema(
     },
     invoiceUrl: { type: String },
     xenditInvoiceId: { type: String },
+    external_id: { type: String, required: true, unique: true }, // ✅ TAMBAHKAN INI
     paidAt: { type: Date },
   },
   {
