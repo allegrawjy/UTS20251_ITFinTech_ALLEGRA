@@ -1,178 +1,226 @@
-import connectDB from '../../../../lib/db';
-import Transaction from '../../../../models/transaction';
+import { NextResponse } from "next/server";
+import { connectDB } from "../../../../lib/db";
+import Transaction from "../../../../models/transaction";
 
-export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-callback-token');
-
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+// Helper function untuk format nomor WhatsApp
+function formatPhoneNumber(phone) {
+  let cleaned = phone.replace(/\D/g, '');
+  
+  if (cleaned.startsWith('0')) {
+    cleaned = '62' + cleaned.substring(1);
   }
-
-  // ✅ Handle GET request untuk verifikasi webhook
-  if (req.method === 'GET') {
-    console.log("✅ GET request - Webhook verification");
-    return res.status(200).json({ 
-      message: 'Xendit webhook endpoint is ready',
-      status: 'ok' 
-    });
+  
+  if (!cleaned.startsWith('62')) {
+    cleaned = '62' + cleaned;
   }
+  
+  return cleaned;
+}
 
-  // ✅ Handle POST request untuk menerima webhook dari Xendit
-  if (req.method !== 'POST') {
-    return res.status(405).json({ message: "Method not allowed" });
-  }
-
-  console.log("=== XENDIT WEBHOOK RECEIVED ===");
-  console.log("METHOD:", req.method);
-  console.log("HEADERS:", req.headers);
-  console.log("BODY:", req.body);
-
-  await connectDB();
-
+async function processPayment(body) {
   try {
-    const payload = req.body;
-    const callbackToken = req.headers["x-callback-token"];
-    const XENDIT_CALLBACK_TOKEN = process.env.XENDIT_CALLBACK_TOKEN;
+    await connectDB();
+    const { external_id, status, paid_at, id: xenditInvoiceId } = body;
 
-    // Verifikasi callback token
-    if (XENDIT_CALLBACK_TOKEN && callbackToken !== XENDIT_CALLBACK_TOKEN) {
-      console.error("❌ Invalid callback token");
-      return res.status(401).json({ message: "Unauthorized" });
+    if (!external_id) {
+      console.warn("⚠️ Webhook missing external_id");
+      return;
     }
 
-    const invoiceStatus = payload.status; // PAID, SETTLED, EXPIRED, FAILED
-    const externalId = payload.external_id;
+    console.log(`📌 Processing webhook for external_id: ${external_id}`);
 
-    if (!externalId) {
-      console.error("❌ Missing external_id in webhook payload");
-      return res.status(400).json({ message: "Missing external_id" });
-    }
+    // Normalize Xendit statuses
+    const isPaid = status === "PAID" || status === "SETTLED";
+    const isFailed = status === "EXPIRED" || status === "FAILED" || status === "CANCELLED";
+    const normalized = isPaid ? "PAID" : isFailed ? "FAILED" : "PENDING";
 
-    console.log(`🔍 Looking for transaction with external_id: ${externalId}`);
-
-    // Cari transaksi berdasarkan external_id
-    const transaction = await Transaction.findOne({ external_id: externalId }).populate("user");
+    // ✅ PERBAIKAN: Cari berdasarkan external_id, BUKAN _id
+    const transaction = await Transaction.findOneAndUpdate(
+      { external_id: external_id }, // 👈 Gunakan external_id dari Xendit
+      {
+        status: normalized,
+        paidAt: isPaid ? (paid_at ? new Date(paid_at) : new Date()) : undefined,
+        xenditInvoiceId: xenditInvoiceId || undefined, // Update xenditInvoiceId jika ada
+      },
+      { new: true }
+    ).populate('user'); // Populate user untuk dapat data langsung
 
     if (!transaction) {
-      console.error("❌ Transaction not found:", externalId);
-      return res.status(404).json({ message: "Transaction not found" });
+      console.log(`⚠️ Transaction dengan external_id ${external_id} tidak ditemukan di DB`);
+      return;
     }
 
-    console.log(`✅ Transaction found: ${transaction._id}`);
+    console.log(`✅ Transaction ${transaction._id} (${external_id}) updated to ${normalized}`);
 
-    // Map status dari Xendit ke status internal
-    const statusMap = {
-      PAID: "PAID",
-      SETTLED: "PAID",
-      COMPLETED: "PAID",
-      PENDING: "PENDING",
-      EXPIRED: "EXPIRED",
-      FAILED: "FAILED",
-    };
-
-    const newStatus = statusMap[invoiceStatus] || "FAILED";
-    const oldStatus = transaction.status;
-
-    // Update status
-    transaction.status = newStatus;
-    if (newStatus === "PAID") {
-      transaction.paidAt = new Date();
+    // Send WhatsApp notification berdasarkan status
+    if (normalized === "PAID") {
+      await sendPaymentSuccessWhatsApp(transaction);
+    } else if (normalized === "FAILED") {
+      await sendPaymentFailedWhatsApp(transaction);
     }
-
-    await transaction.save();
-
-    console.log(`✅ Status updated: ${oldStatus} → ${newStatus}`);
-
-    // Kirim WhatsApp notification kalau status berubah jadi PAID
-    if (newStatus === "PAID" && oldStatus !== "PAID") {
-      console.log("📱 Sending WhatsApp payment success notification...");
-      await sendPaymentSuccessNotification(transaction);
-    }
-
-    return res.status(200).json({ 
-      success: true,
-      message: "Webhook processed successfully"
-    });
 
   } catch (err) {
-    console.error("❌ Webhook error:", err);
-    return res.status(500).json({ 
-      message: "Server error",
-      error: err.message 
-    });
+    console.error("❌ DB processing error:", err);
+    throw err; // Re-throw untuk ditangkap di handler utama
   }
 }
 
-// Fungsi kirim WhatsApp notification untuk payment success
-async function sendPaymentSuccessNotification(transaction) {
+// Fungsi untuk kirim WhatsApp sukses pembayaran
+async function sendPaymentSuccessWhatsApp(transaction) {
   try {
-    const token = process.env.FONNTE_API_TOKEN;
-    const user = transaction.user;
+    const FONNTE_API_TOKEN = process.env.FONNTE_API_TOKEN;
     
-    if (!token) {
+    if (!FONNTE_API_TOKEN) {
       console.error('❌ FONNTE_API_TOKEN not configured');
       return;
     }
 
+    // Ambil user data
+    const user = transaction.user;
+    
     if (!user?.whatsappNumber) {
-      console.error('❌ User WhatsApp number not found');
+      console.warn('⚠️ User tidak memiliki whatsappNumber');
       return;
     }
 
-    // Format nomor WhatsApp
-    let whatsapp = user.whatsappNumber.replace(/\D/g, "");
-    if (whatsapp.startsWith("0")) {
-      whatsapp = "62" + whatsapp.substring(1);
-    }
-    if (!whatsapp.startsWith("62")) {
-      whatsapp = "62" + whatsapp;
-    }
+    const whatsapp = formatPhoneNumber(user.whatsappNumber);
 
-    // Buat detail items
-    const itemsList = transaction.items.map(item => 
-      `• ${item.name} (${item.quantity}x)`
+    // Format item pesanan
+    const orderDetails = transaction.items.map(item => 
+      `• ${item.name} (${item.quantity}x) - Rp ${(item.price * item.quantity).toLocaleString('id-ID')}`
     ).join('\n');
 
-    const message = `🎉 *PEMBAYARAN BERHASIL!*
+    const message = `Halo ${user.name || user.username} 👋
 
-Terima kasih ${user.name || user.username}! Pembayaran Anda telah dikonfirmasi.
+Pembayaran kamu sudah kami terima! 🎉✅
 
 *Detail Pesanan:*
-${itemsList}
+${orderDetails}
 
-*Total Bayar:* Rp ${transaction.totalPrice.toLocaleString()}
-*ID Transaksi:* ${transaction.external_id}
-*Status:* ✅ LUNAS
+*Total Dibayar: Rp ${transaction.totalPrice.toLocaleString('id-ID')}*
 
-Pesanan Anda segera kami proses.
+ID Transaksi: #${transaction.external_id}
 
-Terima kasih telah berbelanja di ALL'S GOOD FOOD! 🙌☕`;
+Pesanan kamu sedang kami proses dan akan segera dikirim. Terima kasih sudah berbelanja! ☕🛍️`;
 
-    const response = await fetch("https://api.fonnte.com/send", {
-      method: "POST",
+    const response = await fetch('https://api.fonnte.com/send', {
+      method: 'POST',
       headers: {
-        Authorization: token,
-        "Content-Type": "application/json",
+        'Authorization': FONNTE_API_TOKEN,
+        'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        target: whatsapp,
+      body: JSON.stringify({ 
+        target: whatsapp, 
         message,
-        countryCode: "62",
+        countryCode: '62'
       }),
     });
 
     const result = await response.json();
     
     if (result.status) {
-      console.log("✅ WhatsApp payment success notification sent to:", whatsapp);
+      console.log('✅ WhatsApp pembayaran sukses dikirim ke:', whatsapp);
     } else {
-      console.error("❌ Failed to send WhatsApp:", result);
+      console.error('❌ Gagal mengirim WhatsApp sukses:', result);
     }
 
-    return result;
   } catch (error) {
-    console.error("❌ Error sending WhatsApp notification:", error);
+    console.error('❌ Error sending payment success WhatsApp:', error);
+  }
+}
+
+// Fungsi untuk kirim WhatsApp gagal pembayaran
+async function sendPaymentFailedWhatsApp(transaction) {
+  try {
+    const FONNTE_API_TOKEN = process.env.FONNTE_API_TOKEN;
+    
+    if (!FONNTE_API_TOKEN) {
+      console.error('❌ FONNTE_API_TOKEN not configured');
+      return;
+    }
+
+    const user = transaction.user;
+    
+    if (!user?.whatsappNumber) {
+      console.warn('⚠️ User tidak memiliki whatsappNumber');
+      return;
+    }
+
+    const whatsapp = formatPhoneNumber(user.whatsappNumber);
+
+    const message = `Halo ${user.name || user.username} 👋
+
+Pembayaran untuk pesanan kamu tidak berhasil atau sudah kadaluarsa. 😔
+
+ID Transaksi: #${transaction.external_id}
+Total: Rp ${transaction.totalPrice.toLocaleString('id-ID')}
+
+Jika kamu masih ingin melanjutkan pesanan, silakan lakukan checkout ulang melalui website kami.
+
+Terima kasih! ☕`;
+
+    const response = await fetch('https://api.fonnte.com/send', {
+      method: 'POST',
+      headers: {
+        'Authorization': FONNTE_API_TOKEN,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ 
+        target: whatsapp, 
+        message,
+        countryCode: '62'
+      }),
+    });
+
+    const result = await response.json();
+    
+    if (result.status) {
+      console.log('✅ WhatsApp pembayaran gagal dikirim ke:', whatsapp);
+    } else {
+      console.error('❌ Gagal mengirim WhatsApp gagal:', result);
+    }
+
+  } catch (error) {
+    console.error('❌ Error sending payment failed WhatsApp:', error);
+  }
+}
+
+export async function POST(req) {
+  try {
+    // Validasi token callback dari Xendit
+    const tokenHeader = req.headers['x-callback-token'];
+    const secretToken = process.env.XENDIT_CALLBACK_TOKEN;
+
+    if (!secretToken) {
+      console.error("❌ XENDIT_CALLBACK_TOKEN belum di-set di .env");
+      return NextResponse.json({ error: "Server misconfiguration" }, { status: 500 });
+    }
+
+    if (tokenHeader !== secretToken) {
+      console.error("❌ Invalid Xendit callback token:", tokenHeader);
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Parse webhook body
+    const body = await req.json();
+    console.log("📩 Xendit Webhook received:", JSON.stringify(body, null, 2));
+
+    // Process payment
+    await processPayment(body);
+
+    // Return success response to Xendit
+    return NextResponse.json({ 
+      message: "Webhook processed successfully",
+      received: true 
+    }, { status: 200 });
+
+  } catch (error) {
+    console.error("❌ Webhook processing error:", error);
+    
+    // Tetap return 200 agar Xendit tidak retry terus-menerus
+    return NextResponse.json({ 
+      message: "Webhook received but processing failed",
+      error: error.message 
+    }, { status: 200 });
   }
 }
