@@ -74,7 +74,7 @@ export default function AdminDashboard() {
           {/* Analytics & Charts */}
           <div className="bg-white dark:bg-zinc-950 rounded-lg shadow p-6 flex flex-col gap-4 col-span-1 md:col-span-2 lg:col-span-3">
             <h2 className="text-xl font-bold mb-2">Data Analitik</h2>
-            <div>Total Penjualan: <span className="font-bold text-green-600">Rp {analytics.totalSales.toLocaleString()}</span></div>
+            <div>Total Penjualan: <span className="font-bold text-green-600">Rp {analytics.totalSales}</span></div>
             <div>Total Order: <span className="font-bold text-blue-600">{analytics.totalOrders}</span></div>
             <div>Total User: <span className="font-bold text-purple-600">{analytics.totalUsers}</span></div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">

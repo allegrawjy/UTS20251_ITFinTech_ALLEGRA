@@ -1,96 +1,81 @@
-import { connectDB } from "../../../../lib/db";
-import Transaction from "../../../../models/transaction";
+import mongoose from "mongoose";
 
-// Helper function untuk format nomor WhatsApp
-function formatPhoneNumber(phone) {
-  let cleaned = phone.replace(/\D/g, '');
-  
-  if (cleaned.startsWith('0')) {
-    cleaned = '62' + cleaned.substring(1);
+const ItemSchema = new mongoose.Schema({
+  productId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Product',
+    required: true
+  },
+  name: {
+    type: String,
+    required: true
+  },
+  price: {
+    type: Number,
+    required: true
+  },
+  quantity: {
+    type: Number,
+    required: true,
+    default: 1
   }
-  
-  if (!cleaned.startsWith('62')) {
-    cleaned = '62' + cleaned;
+});
+
+const TransactionSchema = new mongoose.Schema({
+  external_id: {
+    type: String,
+    required: true,
+    unique: true
+  },
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  items: [ItemSchema],
+  totalPrice: {
+    type: Number,
+    required: true
+  },
+  status: {
+    type: String,
+    enum: ["PENDING", "PAID", "FAILED", "EXPIRED", "CANCELLED"],
+    default: "PENDING"
+  },
+  paymentStatus: {
+    type: String,
+    enum: ["PENDING", "PAID", "SETTLED", "FAILED", "EXPIRED", "CANCELLED"],
+    default: "PENDING"
+  },
+  isPaid: {
+    type: Boolean,
+    default: false
+  },
+  paidAt: {
+    type: Date
+  },
+  xenditInvoiceId: {
+    type: String
+  },
+  xenditPaymentId: {
+    type: String
+  },
+  invoiceUrl: {
+    type: String
+  },
+  customerName: {
+    type: String
+  },
+  customerEmail: {
+    type: String
+  },
+  customerPhone: {
+    type: String
   }
-  
-  return cleaned;
-}
+}, {
+  timestamps: true
+});
 
-export default async function handler(req, res) {
-  // Hanya terima POST request
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
+const Transaction = mongoose.models.Transaction || mongoose.model('Transaction', TransactionSchema);
 
-  try {
-    // Validasi token callback dari Xendit
-    const tokenHeader = req.headers['x-callback-token'];
-    const secretToken = process.env.XENDIT_CALLBACK_TOKEN;
-    
-    console.log('Token dari header:', tokenHeader);
-    console.log('Secret token dari env:', secretToken);
-    
-    if (!secretToken) {
-      console.error('XENDIT_CALLBACK_TOKEN belum di-set di .env');
-      return res.status(500).json({ error: "Server misconfiguration" });
-    }
-    
-    if (tokenHeader !== secretToken) {
-      console.error('Invalid Xendit callback token:', tokenHeader);
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    // Connect ke database
-    await connectDB();
-
-    // Ambil data dari request body
-    const paymentData = req.body;
-    
-    console.log('Received webhook from Xendit:', paymentData);
-
-    // Proses payment berdasarkan status
-    const { external_id, status, id: payment_id } = paymentData;
-
-    if (!external_id) {
-      console.error('external_id tidak ditemukan di webhook data');
-      return res.status(400).json({ error: 'Invalid webhook data' });
-    }
-
-    // Cari transaksi berdasarkan external_id
-    const transaction = await Transaction.findOne({ orderId: external_id });
-
-    if (!transaction) {
-      console.error('Transaction not found:', external_id);
-      return res.status(404).json({ error: 'Transaction not found' });
-    }
-
-    // Update status transaksi
-    transaction.paymentStatus = status;
-    transaction.xenditPaymentId = payment_id;
-    
-    if (status === 'PAID' || status === 'SETTLED') {
-      transaction.isPaid = true;
-      transaction.paidAt = new Date();
-      
-      // TODO: Kirim notifikasi WhatsApp di sini jika diperlukan
-      // await sendPaymentSuccessWhatsApp(transaction);
-    }
-
-    await transaction.save();
-
-    console.log('Transaction updated successfully:', transaction);
-
-    // Return response sukses
-    return res.status(200).json({ 
-      success: true, 
-      message: 'Webhook processed successfully' 
-    });
-
-  } catch (error) {
-    console.error('Error processing webhook:', error);
-    return res.status(500).json({ 
-      error: 'Internal server error',
-      message: error.message 
-    });
-  }
-}
+export default Transaction;

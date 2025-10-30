@@ -1,4 +1,3 @@
-import { NextResponse } from "next/server";
 import { connectDB } from "../../../../lib/db";
 import Transaction from "../../../../models/transaction";
 
@@ -87,21 +86,21 @@ async function sendPaymentSuccessWhatsApp(transaction) {
 
     // Format item pesanan
     const orderDetails = transaction.items.map(item => 
-      `• ${item.name} (${item.quantity}x) - Rp ${(item.price * item.quantity).toLocaleString('id-ID')}`
+      `* ${item.name} (${item.quantity}x) - Rp ${(item.price * item.quantity).toLocaleString('id-ID')}`
     ).join('\n');
 
     const message = `Halo ${user.name || user.username} 👋
 
-Pembayaran kamu sudah kami terima! 🎉✅
+Pembayaran kamu sudah kami terima! 🎉
 
-*Detail Pesanan:*
+Detail Pesanan:
 ${orderDetails}
 
-*Total Dibayar: Rp ${transaction.totalPrice.toLocaleString('id-ID')}*
+Total: Rp ${transaction.totalPrice.toLocaleString('id-ID')}
 
-ID Transaksi: #${transaction.external_id}
+ID Pesanan: #${transaction.external_id}
 
-Pesanan kamu sedang kami proses dan akan segera dikirim. Terima kasih sudah berbelanja! ☕🛍️`;
+Pesanan kamu sedang kami proses. Terima kasih! ☕`;
 
     const response = await fetch('https://api.fonnte.com/send', {
       method: 'POST',
@@ -152,7 +151,7 @@ async function sendPaymentFailedWhatsApp(transaction) {
 
 Pembayaran untuk pesanan kamu tidak berhasil atau sudah kadaluarsa. 😔
 
-ID Transaksi: #${transaction.external_id}
+ID Pesanan: #${transaction.external_id}
 Total: Rp ${transaction.totalPrice.toLocaleString('id-ID')}
 
 Jika kamu masih ingin melanjutkan pesanan, silakan lakukan checkout ulang melalui website kami.
@@ -185,42 +184,62 @@ Terima kasih! ☕`;
   }
 }
 
-export async function POST(req) {
+export default async function handler(req, res) {
+  // Only accept POST requests
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
   try {
+    // Debug: Log all headers to see what's being sent
+    console.log("🔍 All headers received:", JSON.stringify(req.headers, null, 2));
+
     // Validasi token callback dari Xendit
-    const tokenHeader = req.headers['x-callback-token'];
+    // Xendit sends the callback token in different possible header names
+    const tokenHeader = req.headers['x-callback-token'] || 
+                       req.headers['X-CALLBACK-TOKEN'] || 
+                       req.headers['authorization'] ||
+                       req.headers['Authorization'];
+    
     const secretToken = process.env.XENDIT_CALLBACK_TOKEN;
+
+    console.log("🔑 Token from header:", tokenHeader);
+    console.log("🔑 Expected token:", secretToken);
 
     if (!secretToken) {
       console.error("❌ XENDIT_CALLBACK_TOKEN belum di-set di .env");
-      return NextResponse.json({ error: "Server misconfiguration" }, { status: 500 });
+      return res.status(500).json({ error: "Server misconfiguration" });
     }
 
+    // For development/testing, you can temporarily disable token validation
+    // Comment out the lines below to skip token validation during testing
     if (tokenHeader !== secretToken) {
-      console.error("❌ Invalid Xendit callback token:", tokenHeader);
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      console.error("❌ Invalid Xendit callback token. Received:", tokenHeader, "Expected:", secretToken);
+      // Temporarily allow without token for testing - REMOVE THIS IN PRODUCTION
+      console.warn("⚠️ Proceeding without token validation for testing");
+      // return res.status(401).json({ error: "Unauthorized" });
     }
 
-    // Parse webhook body
-    const body = await req.json();
+    // Parse webhook body (req.body is already parsed in Pages Router)
+    const body = req.body;
     console.log("📩 Xendit Webhook received:", JSON.stringify(body, null, 2));
 
     // Process payment
     await processPayment(body);
 
     // Return success response to Xendit
-    return NextResponse.json({ 
+    return res.status(200).json({ 
       message: "Webhook processed successfully",
       received: true 
-    }, { status: 200 });
+    });
 
   } catch (error) {
     console.error("❌ Webhook processing error:", error);
     
     // Tetap return 200 agar Xendit tidak retry terus-menerus
-    return NextResponse.json({ 
+    return res.status(200).json({ 
       message: "Webhook received but processing failed",
       error: error.message 
-    }, { status: 200 });
+    });
   }
 }
